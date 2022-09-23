@@ -66,6 +66,7 @@ function train(; kws...)
 
   # Load the data
   data = load_data(hparams)
+  train_loader,test_loader = get_data(args)
 
   #fixed_labels = [float.(Flux.onehotbatch(rand(0:hparams.nclasses-1, 1), 0:hparams.nclasses-1)) |> gpu # onehot for categorical data
   
@@ -82,7 +83,7 @@ function train(; kws...)
   train_steps = 0
   for ep in 1:hparams.epochs
       @info "Epoch $ep"
-      for (x, y) in data
+      for (x, y) in train_loader
           # Update discriminator and generator
           loss = train_net(net, x, y, opt_net, hparams)
 
