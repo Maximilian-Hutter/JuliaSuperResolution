@@ -1,11 +1,30 @@
+using Base.Iterators: partition
+using Flux
+using Flux.Optimise: update!
+using Flux.Losses: logitbinarycrossentropy
+using Images
+using ImageMagick
+using MLDatasets
+using Statistics
+using Parameters: @with_kw
+using Random
+using Printf
+using CUDA
+using Zygote
+
 include("dataloader.jl")
 include("utility.jl")
 include("models.jl")  # include models in this line could also be placed in the middle of the file
 
 @with_kw struct HyperParams
-  batch_size::Int = 36
+  batch_size::Int = 32
   img_size::Tuple{Int, Int, Int} = (640,360,3) # w, h, c # batch_size
+  feats::Int = 64
   epochs::Int = 250
+  resblocks::Int = 10
+  kernel::Tuple{Int, Int} = (3,3)
+  scale::Int = 2
+  padding::Int = round((kernel[1] / 2))
   verbose_freq::Int = 1000  # steps until output of loss info and output img save
   lr::Float64 = 0.0002  # learning rate
 end
@@ -51,7 +70,7 @@ function train(; kws...)
   #fixed_labels = [float.(Flux.onehotbatch(rand(0:hparams.nclasses-1, 1), 0:hparams.nclasses-1)) |> gpu # onehot for categorical data
   
   # Generator
-  net =  generator(hparams)
+  net =  superResolution(hparams)
 
   # Optimizers
   opt_net = ADAM(hparams.lr, (0.5, 0.99))

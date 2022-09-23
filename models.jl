@@ -24,20 +24,20 @@ using Flux: onehotbatch, onecold, flatten
 
 # structured like pytorch
 # Res Skipped block
-struct ResSkippedBlock  # like object in torch
+struct ResSkippedBlock  # like class in torch
   chain::Chain
 end
 function resSkippedBlock(args)  # buidling model
-  return ResSkippedBlock(m.chain(
-    Conv(filter, in => out, relu) # RELU
-    Conv(filter, in => out)
-    Flux.Scale()  # mul 0.1
-  ))
+  return ResSkippedBlock(Chain(
+    Conv(args.kernel, args.feats => args.feats, relu;pad = args.padding), # RELU
+
+    Conv(args.kernel, args.feats => args.feats;pad = args.padding)
+    ))
 end
 function (m::ResSkippedBlock)(x)    # forward path
-    return m.chain(x)
+    return (m.chain(x) * 0.1) # mul 0.1
 end
-@functor ResSkippedBlock
+Flux.@functor ResSkippedBlock
 # Res Skipped Block end
 
 # Upsample
@@ -46,34 +46,51 @@ struct UpsampleBlock
 end
 
 function upsampleBlock(args)  # 4x upsample block
-  return UpsampleBlock(m.chain(
-    Conv(filter, in => out)
-    PixelShuffle(2)
-    Conv(filter, in => out)
-    PixelShuffle(2)
+    return UpsampleBlock(Chain(
+    if(args.scale & (args.scale - 1) == 0)    # if scale 2^n
+        for _ in round(log(args.scale))   # repeat upscale for n
+            Conv(args.kernel, args.feats => 4 * args.feats;pad = args.padding)
+            PixelShuffle(2)
+        end
+    end
+
 ))
 end
 
 function (m::UpsampleBlock)(x)
     return m.chain(x)
 end
-@functor UpsampleBlock
+Flux.@functor UpsampleBlock
 #Upsample end
+
+function repeatblocks(args)
+    for _ in args.resblocks
+        SkipConnection(resSkippedBlock(args),+)
+    end
+end
 
 struct MainSkippedBlock
   chain::Chain
 end
-function mainSkippedBlock(args)
-  return MainSkippedBlock(m.chain(
-    ResSkippedBlock(x)  # TODO for loop for multiple blocks
-    Conv(filter, in => out)
-  ))
+function mainSkippedBlock(args)  
+  return MainSkippedBlock(Chain(# m not defined
+    repeatblocks(args),  # for some reason cant put for loop in this line
+    Conv(args.kernel, args.feats => args.feats;pad = args.padding)
+    
+    ))
+#     for i in args.resblocks
+#         SkipConnection(resSkippedBlock(args),+)
+        
+#     end
+
+#     Conv(args.kernel, args.feats => args.feat;pad = args.padding)
+#   ))
 end
 
 function (m::MainSkippedBlock)(x)
     return m.chain(x)
 end
-@functor MainSkippedBlock
+Flux.@functor MainSkippedBlock
 
 struct SuperResolution
     chain::Chain
@@ -84,18 +101,15 @@ function superResolution(args)  #array start at 1
   return SuperResolution(Chain(
     # just for testing
     #conv
-    filter = (5,5)
-    firstPart = Chain(
-    Conv(filter,3 => 7)
-    SkipConnection(MainSkippedBlock(x), +))
+    Conv(args.kernel,3 => args.feats;pad = args.padding),
+    SkipConnection(mainSkippedBlock(args), +),
          #res #conv in chain # input will be kept and added at end #skipped is the model & layers that are skipped     #add res value
-    UpsampleBlock(firstPart)
-    Conv(filter, in => out)
+    upsampleBlock(args),
+    Conv(args.kernel, args.feats => args.feats; pad = args.padding)
   ))
 end
 
 function (m::SuperResolution)(x)
     return m.chain(x)
 end
-@functor SuperResolution
-#
+Flux.@functor SuperResolution
